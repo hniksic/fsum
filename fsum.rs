@@ -14,7 +14,14 @@ fn fsum<'a, T>(args: T) -> u64
     let mut total = 0u64;
 
     while let Some(fl) = todo.pop_front() {
-        let meta = fs::symlink_metadata(&fl).unwrap();
+        let mut meta = fs::symlink_metadata(&fl).unwrap();
+        if meta.file_type().is_symlink() {
+            let follow = fs::metadata(&fl);
+            if !follow.is_ok() {
+                continue;       // ignore broken symlinks
+            }
+            meta = follow.unwrap();
+        }
         let st = &meta as &std::os::unix::fs::MetadataExt;
         let file_id = (st.dev(), st.ino());
         if !seen.insert(file_id) {
