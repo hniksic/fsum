@@ -4,6 +4,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::fs;
 use std::env;
+use std::io;
+use std::io::Write;
 
 fn fsum<'a, T>(args: T) -> u64
     where T: Iterator<Item=&'a Path>
@@ -14,26 +16,34 @@ fn fsum<'a, T>(args: T) -> u64
     let mut total = 0u64;
 
     while let Some(fl) = todo.pop_front() {
-        let mut meta = fs::symlink_metadata(&fl).unwrap();
-        if meta.file_type().is_symlink() {
-            let follow = fs::metadata(&fl);
-            if !follow.is_ok() {
-                continue;       // ignore broken symlinks
+        match (|| -> Result<(), io::Error> {
+            let mut meta = try!(fs::symlink_metadata(&fl));
+            if meta.file_type().is_symlink() {
+                let follow = fs::metadata(&fl);
+                if !follow.is_ok() {
+                    return Ok(());  // ignore broken symlinks
+                }
+                meta = try!(follow);
             }
-            meta = follow.unwrap();
-        }
-        let st = &meta as &std::os::unix::fs::MetadataExt;
-        let file_id = (st.dev(), st.ino());
-        if !seen.insert(file_id) {
-            continue
-        }
+            let st = &meta as &std::os::unix::fs::MetadataExt;
+            let file_id = (st.dev(), st.ino());
+            if !seen.insert(file_id) {
+                return Ok(());
+            }
 
-        if meta.is_dir() {
-            todo.extend(fs::read_dir(&fl)
-                        .unwrap()
-                        .map(|dirent| dirent.unwrap().path()));
-        } else {
-            total += meta.len();
+            if meta.is_dir() {
+                todo.extend(try!(fs::read_dir(&fl))
+                            .filter_map(Result::ok)
+                            .map(|dirent| dirent.path()));
+            } else {
+                total += meta.len();
+            }
+            Ok(())
+        })() {
+            Err(e) => {
+                writeln!(&mut std::io::stderr(), "{}", e.to_string()).unwrap();
+            }
+            _ => ()
         }
     }
 
