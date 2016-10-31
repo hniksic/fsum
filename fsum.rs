@@ -15,13 +15,17 @@ fn fsum<'a, T>(args: T) -> u64
     let mut seen: HashSet<(u64, u64)> = HashSet::new();
     let mut total = 0u64;
 
+    fn log_error(e: io::Error) {
+        writeln!(&mut std::io::stderr(), "{}", e.to_string()).unwrap()
+    }
+
     while let Some(fl) = todo.pop_front() {
-        match (|| -> Result<(), io::Error> {
+        (|| {
             let mut meta = try!(fs::symlink_metadata(&fl));
             if meta.file_type().is_symlink() {
                 let follow = fs::metadata(&fl);
                 if !follow.is_ok() {
-                    return Ok(());  // ignore broken symlinks
+                    return Ok(());  // don't log broken symlinks
                 }
                 meta = try!(follow);
             }
@@ -33,18 +37,13 @@ fn fsum<'a, T>(args: T) -> u64
 
             if meta.is_dir() {
                 todo.extend(try!(fs::read_dir(&fl))
-                            .filter_map(Result::ok)
+                            .filter_map(|res| res.map_err(log_error).ok())
                             .map(|dirent| dirent.path()));
             } else {
                 total += meta.len();
             }
             Ok(())
-        })() {
-            Err(e) => {
-                writeln!(&mut std::io::stderr(), "{}", e.to_string()).unwrap();
-            }
-            _ => ()
-        }
+        })().map_err(log_error).ok();
     }
 
     total
