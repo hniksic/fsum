@@ -7,8 +7,7 @@ use std::env;
 use std::io;
 use std::io::Write;
 
-fn fsum<'a, T>(args: T) -> u64
-    where T: Iterator<Item=&'a Path>
+fn fsum(args: &mut Iterator<Item=&Path>) -> u64
 {
     let mut todo: VecDeque<PathBuf> = args.map(|x| x.to_path_buf()).collect();
 
@@ -52,7 +51,7 @@ fn fsum<'a, T>(args: T) -> u64
 fn main()
 {
     let paths: Vec<PathBuf> = env::args_os().skip(1).map(PathBuf::from).collect();
-    let size = fsum(paths.iter().map(|x| x.as_path()));
+    let size = fsum(&mut paths.iter().map(|x| x.as_path()));
     println!("{}", size);
     for &(power, digits, letter) in [(1<<10, 0, "K"), (1<<20, 2, "M"), (1<<30, 2, "G")].iter() {
         if size >= power {
