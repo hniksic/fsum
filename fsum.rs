@@ -1,15 +1,13 @@
-use std::collections::HashSet;
-use std::collections::VecDeque;
-use std::path::Path;
-use std::path::PathBuf;
+use std::collections::{HashSet, VecDeque};
+use std::path::{PathBuf};
 use std::fs;
 use std::env;
 use std::io;
 use std::io::Write;
 
-fn fsum(args: &mut Iterator<Item=&Path>) -> u64
+fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
 {
-    let mut todo: VecDeque<PathBuf> = args.map(|x| x.to_path_buf()).collect();
+    let mut todo: VecDeque<PathBuf> = args.collect();
 
     let mut seen: HashSet<(u64, u64)> = HashSet::new();
     let mut total = 0u64;
@@ -50,8 +48,7 @@ fn fsum(args: &mut Iterator<Item=&Path>) -> u64
 
 fn main()
 {
-    let paths: Vec<PathBuf> = env::args_os().skip(1).map(PathBuf::from).collect();
-    let size = fsum(&mut paths.iter().map(|x| x.as_path()));
+    let size = fsum(&mut env::args_os().skip(1).map(PathBuf::from));
     println!("{}", size);
     for &(power, digits, letter) in [(1<<10, 0, "K"), (1<<20, 2, "M"), (1<<30, 2, "G")].iter() {
         if size >= power {
