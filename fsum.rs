@@ -17,9 +17,17 @@ impl fmt::Display for FileError {
     }
 }
 
-fn imbue(filename: &PathBuf) -> Box<Fn(io::Error) -> FileError> {
-    let filename = filename.clone();
-    Box::new(move |e| FileError {err: e, filename: filename.clone()})
+trait Contextify<T> {
+    fn imbue_err(self, filename: &PathBuf) -> Result<T, FileError>;
+}
+
+impl<T> Contextify<T> for Result<T, io::Error> {
+    fn imbue_err(self, filename: &PathBuf) -> Result<T, FileError> {
+        match self {
+            Err(err) => Err(FileError {err: err, filename: filename.clone()}),
+            Ok(v) => Ok(v),
+        }
+    }
 }
 
 fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
@@ -35,13 +43,13 @@ fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
 
     while let Some(fl) = todo.pop_front() {
         (|| {
-            let mut meta = try!(fs::symlink_metadata(&fl).map_err(&*imbue(&fl)));
+            let mut meta = try!(fs::symlink_metadata(&fl).imbue_err(&fl));
             if meta.file_type().is_symlink() {
                 let follow = fs::metadata(&fl);
                 if !follow.is_ok() {
                     return Ok(());  // don't log broken symlinks
                 }
-                meta = try!(follow.map_err(&*imbue(&fl)));
+                meta = try!(follow.imbue_err(&fl));
             }
             let st = &meta as &std::os::unix::fs::MetadataExt;
             let file_id = (st.dev(), st.ino());
@@ -50,8 +58,8 @@ fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
             }
 
             if meta.is_dir() {
-                todo.extend(try!(fs::read_dir(&fl).map_err(&*imbue(&fl)))
-                            .filter_map(|res| res.map_err(&*imbue(&fl)).map_err(log_error).ok())
+                todo.extend(try!(fs::read_dir(&fl).imbue_err(&fl))
+                            .filter_map(|res| res.imbue_err(&fl).map_err(log_error).ok())
                             .map(|dirent| dirent.path()));
             } else {
                 total += meta.len();
