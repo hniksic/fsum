@@ -7,6 +7,7 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::HashSet;
+use std::io::Write;
 
 enum QItem<T> {
     Item(T),
@@ -74,36 +75,47 @@ struct State {
     seen: Mutex<HashSet<(u64, u64)>>,
 }
 
+fn log_error<E: std::fmt::Display>(path: &PathBuf, e: E) {
+    writeln!(std::io::stderr(), "{}: {}", path.display(), e).unwrap();
+}
+
 fn path_size(path: PathBuf, queue: &Queue<Job>, state: &State)
     -> u64
 {
-    let meta = fs::symlink_metadata(&path).unwrap();
+    (|| -> std::io::Result<u64> {
+        let meta = try!(fs::symlink_metadata(&path));
 
-    let st = &meta as &std::os::unix::fs::MetadataExt;
-    {
-        let mut seen = state.seen.lock().unwrap();
-        if !seen.insert((st.dev(), st.ino())) {
-            return 0;
+        let st = &meta as &std::os::unix::fs::MetadataExt;
+        {
+            let mut seen = state.seen.lock().unwrap();
+            if !seen.insert((st.dev(), st.ino())) {
+                return Ok(0);
+            }
         }
-    }
 
-    if meta.is_dir() {
-        queue.append(Job::Dir(path));
-        0
-    } else {
-        meta.len()
-    }
+        if meta.is_dir() {
+            queue.append(Job::Dir(path.clone()));
+            Ok(0)
+        } else {
+            Ok(meta.len())
+        }
+    })().unwrap_or_else(|e| { log_error(&path, e); 0 })
 }
+        
 
 fn worker(queue: Queue<Job>, state: Arc<State>) -> u64 {
     let q2 = queue.clone();
     queue.map(
         |job| match job {
             Job::Path(path) => path_size(path, &q2, &state),
-            Job::Dir(dir)   => (fs::read_dir(&dir).unwrap()
-                                .map(|dirent|
-                                     path_size(dirent.unwrap().path(), &q2, &state))
-                                .sum())
+            Job::Dir(dir)
+                => (|| -> std::io::Result<u64> {
+                    Ok(try!(fs::read_dir(&dir))
+                        .filter_map(|res| res.map_err(|e| log_error(&dir, e)).ok())
+                        .map(|dirent|
+                             path_size(dirent.path(), &q2, &state))
+                        .sum())
+                })().unwrap_or_else(|e| { log_error(&dir, e); 0 }),
         }).inspect(|_| q2.task_done())
         .sum()
 }
