@@ -47,9 +47,9 @@ struct State {
     qsize: AtomicUsize,
 }
 
-fn handle_path(path: PathBuf,
-               schedule_work: &mpsc::Sender<Job>,
-	       state: &State)
+fn path_size(path: PathBuf,
+             schedule_work: &mpsc::Sender<Job>,
+	     state: &State)
     -> u64
 {
     let meta = fs::symlink_metadata(&path).unwrap();
@@ -71,31 +71,31 @@ fn handle_path(path: PathBuf,
     }
 }
 
-fn fsum_worker(schedule_work: mpsc::Sender<Job>,
-        get_work: shared_channel::SharedReceiver<Job>,
-	state: Arc<State>) -> u64 {
-    let mut total = 0u64;
-    for job in get_work {
-        match job {
-            Job::Path(path) => {
-                total += handle_path(path, &schedule_work, &state);
-            }
-            Job::Dir(dir) => {
-                for dirent in fs::read_dir(&dir).unwrap() {
-                    let path = dirent.unwrap().path();
-                    total += handle_path(path, &schedule_work, &state);
+fn worker(schedule_work: mpsc::Sender<Job>,
+          get_work: shared_channel::SharedReceiver<Job>,
+	  state: Arc<State>) -> u64 {
+    get_work.into_iter().map(
+        |job| {
+            let total = match job {
+                Job::Path(path) => {
+                    Some(path_size(path, &schedule_work, &state))
                 }
-            }
-            Job::Done => {
+                Job::Dir(dir) => {
+                    Some(fs::read_dir(&dir).unwrap()
+                         .map(|dirent|
+                              path_size(dirent.unwrap().path(), &schedule_work, &state))
+                         .sum())
+                }
+                Job::Done => {
+                    schedule_work.send(Job::Done).unwrap();
+                    None
+                }
+            };
+            if state.qsize.fetch_sub(1, Ordering::SeqCst) == 1 {
                 schedule_work.send(Job::Done).unwrap();
-                break;
             }
-        }
-        if state.qsize.fetch_sub(1, Ordering::SeqCst) == 1 {
-            schedule_work.send(Job::Done).unwrap();
-        }
-    }
-    total
+            total
+        }).take_while(Option::is_some).map(Option::unwrap).sum()
 }
 
 fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
@@ -116,7 +116,7 @@ fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
         let get_work = get_work.clone();
         let state = state.clone();
         thread::spawn(move || {
-            fsum_worker(schedule_work, get_work, state)
+            worker(schedule_work, get_work, state)
         })
     }).collect();
 
