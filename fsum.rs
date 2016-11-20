@@ -101,7 +101,7 @@ fn path_size(path: PathBuf, queue: &Queue<Job>, state: &State)
         }
     })().unwrap_or_else(|e| { log_error(&path, e); 0 })
 }
-        
+
 
 fn worker(queue: Queue<Job>, state: Arc<State>) -> u64 {
     let q2 = queue.clone();
@@ -138,7 +138,9 @@ fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
         thread::spawn(move || worker(queue, state))
     }).collect();
 
-    threads.into_iter().map(|t| t.join().unwrap()).sum()
+    threads.into_iter()
+        .map(thread::JoinHandle::join).map(Result::unwrap)
+        .sum()
 }
 
 
