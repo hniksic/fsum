@@ -72,9 +72,9 @@ fn path_size(path: PathBuf,
 }
 
 fn worker(schedule_work: mpsc::Sender<Job>,
-          get_work: shared_channel::SharedReceiver<Job>,
+          jobs: &mut Iterator<Item=Job>,
 	  state: Arc<State>) -> u64 {
-    get_work.into_iter().map(
+    jobs.map(
         |job| {
             let total = match job {
                 Job::Path(path) => {
@@ -116,7 +116,7 @@ fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
         let get_work = get_work.clone();
         let state = state.clone();
         thread::spawn(move || {
-            worker(schedule_work, get_work, state)
+            worker(schedule_work, &mut get_work.into_iter(), state)
         })
     }).collect();
 
