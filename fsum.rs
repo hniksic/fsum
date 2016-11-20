@@ -3,34 +3,63 @@ use std::fs;
 use std::env;
 use std::thread;
 use std::sync::mpsc;
+use std::sync::mpsc::{Sender, Receiver};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::HashSet;
 
-pub mod shared_channel {
-    use std::sync::{Arc, Mutex};
-    use std::sync::mpsc::{channel, Sender, Receiver, RecvError};
+enum QItem<T> {
+    Item(T),
+    Done
+}
 
-    /// A thread-safe wrapper around a `Receiver`.
-    #[derive(Clone)]
-    pub struct SharedReceiver<T>(Arc<Mutex<Receiver<T>>>);
-    impl<T> Iterator for SharedReceiver<T> {
-        type Item = T;
-        /// Get the next item from the wrapped receiver.
-        fn next(&mut self) -> Option<T> {
-            self.recv().ok()
+#[derive(Debug, Clone)]
+struct Queue<T> {
+    tx: Sender<QItem<T>>,
+    rx: Arc<Mutex<Receiver<QItem<T>>>>,
+    qsize: Arc<AtomicUsize>,
+}
+
+impl<T> Queue<T> {
+    pub fn new() -> Queue<T> {
+        let (tx, rx) = mpsc::channel::<QItem<T>>();
+        Queue {
+            rx: Arc::new(Mutex::new(rx)),
+            tx: tx,
+            qsize: Arc::new(AtomicUsize::new(0)),
         }
     }
-    impl<T> SharedReceiver<T> {
-        pub fn recv(&mut self) -> Result<T, RecvError> {
-            let guard = self.0.lock().unwrap();
-            guard.recv()
-        }
+
+    // Note: we own the receiver and know it won't hang up, so
+    // self.tx.send(...).unwrap() should be safe.
+
+    pub fn append(&self, item: T) {
+        self.qsize.fetch_add(1, Ordering::SeqCst);
+        self.tx.send(QItem::Item(item)).unwrap();
     }
 
-    pub fn shared_channel<T>() -> (Sender<T>, SharedReceiver<T>) {
-        let (sender, receiver) = channel();
-        (sender, SharedReceiver(Arc::new(Mutex::new(receiver))))
+    pub fn task_done(&self) {
+        match self.qsize.fetch_sub(1, Ordering::SeqCst) {
+            0 => panic!("task_done called on empty queue"),
+            1 => self.tx.send(QItem::Done).unwrap(),
+            _ => ()
+        }
+    }
+}
+
+impl<T> Iterator for Queue<T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        if self.qsize.load(Ordering::SeqCst) == 0 {
+            return None
+        }
+        match self.rx.lock().unwrap().recv().unwrap() {
+            QItem::Item(item) => Some(item),
+            QItem::Done => {
+                self.tx.send(QItem::Done).unwrap();
+                None
+            }
+        }
     }
 }
 
@@ -39,17 +68,13 @@ pub mod shared_channel {
 enum Job {
     Path(PathBuf),
     Dir(PathBuf),
-    Done,
 }
 
 struct State {
     seen: Mutex<HashSet<(u64, u64)>>,
-    qsize: AtomicUsize,
 }
 
-fn path_size(path: PathBuf,
-             schedule_work: &mpsc::Sender<Job>,
-	     state: &State)
+fn path_size(path: PathBuf, queue: &Queue<Job>, state: &State)
     -> u64
 {
     let meta = fs::symlink_metadata(&path).unwrap();
@@ -63,61 +88,42 @@ fn path_size(path: PathBuf,
     }
 
     if meta.is_dir() {
-        state.qsize.fetch_add(1, Ordering::SeqCst);
-        schedule_work.send(Job::Dir(path)).unwrap();
+        queue.append(Job::Dir(path));
         0
     } else {
         meta.len()
     }
 }
 
-fn worker(schedule_work: mpsc::Sender<Job>,
-          jobs: &mut Iterator<Item=Job>,
-	  state: Arc<State>) -> u64 {
-    jobs.map(
-        |job| {
-            let total = match job {
-                Job::Path(path) => {
-                    Some(path_size(path, &schedule_work, &state))
-                }
-                Job::Dir(dir) => {
-                    Some(fs::read_dir(&dir).unwrap()
-                         .map(|dirent|
-                              path_size(dirent.unwrap().path(), &schedule_work, &state))
-                         .sum())
-                }
-                Job::Done => {
-                    schedule_work.send(Job::Done).unwrap();
-                    None
-                }
-            };
-            if state.qsize.fetch_sub(1, Ordering::SeqCst) == 1 {
-                schedule_work.send(Job::Done).unwrap();
-            }
-            total
-        }).take_while(Option::is_some).map(Option::unwrap).sum()
+fn worker(queue: Queue<Job>, state: Arc<State>) -> u64 {
+    let q2 = queue.clone();
+    queue.map(
+        |job| match job {
+            Job::Path(path) => path_size(path, &q2, &state),
+            Job::Dir(dir)   => (fs::read_dir(&dir).unwrap()
+                                .map(|dirent|
+                                     path_size(dirent.unwrap().path(), &q2, &state))
+                                .sum())
+        }).inspect(|_| q2.task_done())
+        .sum()
 }
 
 fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
 {
     const THREADS_CNT: usize = 8;
 
-    let (schedule_work, get_work) = shared_channel::shared_channel::<Job>();
+    let queue = Queue::<Job>::new();
     let args: Vec<_> = args.collect();
     let state = Arc::new(State {
-        qsize: AtomicUsize::new(args.len()),
         seen: Mutex::new(HashSet::new()),
     });
     for path in args {
-        schedule_work.send(Job::Path(path)).unwrap();
+        queue.append(Job::Path(path));
     }
     let threads: Vec<_> = (0..THREADS_CNT).map(|_| {
-        let schedule_work = schedule_work.clone();
-        let get_work = get_work.clone();
+        let queue = queue.clone();
         let state = state.clone();
-        thread::spawn(move || {
-            worker(schedule_work, &mut get_work.into_iter(), state)
-        })
+        thread::spawn(move || worker(queue, state))
     }).collect();
 
     threads.into_iter().map(|t| t.join().unwrap()).sum()
