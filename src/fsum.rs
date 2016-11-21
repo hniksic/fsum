@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::fs;
-use std::env;
 use std::thread;
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
@@ -8,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::HashSet;
 use std::io::Write;
+use std;
 
 enum QItem<T> {
     Item(T),
@@ -120,7 +120,7 @@ fn worker(queue: Queue<Job>, state: Arc<State>) -> u64 {
         .sum()
 }
 
-fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
+pub fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
 {
     const THREADS_CNT: usize = 8;
 
@@ -141,16 +141,4 @@ fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
     threads.into_iter()
         .map(thread::JoinHandle::join).map(Result::unwrap)
         .sum()
-}
-
-
-fn main()
-{
-    let size = fsum(&mut env::args_os().skip(1).map(PathBuf::from));
-    println!("{}", size);
-    for &(power, digits, letter) in [(1<<10, 0, "K"), (1<<20, 2, "M"), (1<<30, 2, "G")].iter() {
-        if size >= power {
-            println!("{:.*} {}", digits, size as f64 / power as f64, letter)
-        }
-    }
 }

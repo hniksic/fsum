@@ -1,0 +1,6 @@
+[package]
+name = "fsum"
+version = "0.1.0"
+authors = ["Hrvoje Niksic <hniksic@gmail.com>"]
+
+[dependencies]
