@@ -39,6 +39,12 @@ impl<T> Queue<T> {
         self.tx.send(QItem::Item(item)).unwrap();
     }
 
+    pub fn extend<I>(&self, iterable: I) where I: IntoIterator<Item=T> {
+        for item in iterable {
+            self.append(item);
+        }
+    }
+
     pub fn task_done(&self) {
         match self.qsize.fetch_sub(1, Ordering::SeqCst) {
             0 => panic!("task_done called on empty queue"),
@@ -104,19 +110,23 @@ fn path_size(path: PathBuf, queue: &Queue<Job>, state: &State)
 
 
 fn worker(queue: Queue<Job>, state: Arc<State>) -> u64 {
-    let q2 = queue.clone();
+    let q_clone = queue.clone();
     queue.map(
-        |job| match job {
-            Job::Path(path) => path_size(path, &q2, &state),
-            Job::Dir(dir)
-                => (|| -> std::io::Result<u64> {
-                    Ok(try!(fs::read_dir(&dir))
-                        .filter_map(|res| res.map_err(|e| log_error(&dir, e)).ok())
-                        .map(|dirent|
-                             path_size(dirent.path(), &q2, &state))
-                        .sum())
-                })().unwrap_or_else(|e| { log_error(&dir, e); 0 }),
-        }).inspect(|_| q2.task_done())
+        |job| {
+            let size = match job {
+                Job::Path(path) => path_size(path, &q_clone, &state),
+                Job::Dir(dir)
+                    => (|| -> std::io::Result<u64> {
+                        Ok(try!(fs::read_dir(&dir))
+                           .filter_map(|res| res.map_err(|e| log_error(&dir, e)).ok())
+                           .map(|dirent|
+                                path_size(dirent.path(), &q_clone, &state))
+                           .sum())
+                    })().unwrap_or_else(|e| { log_error(&dir, e); 0 }),
+            };
+            q_clone.task_done();
+            size
+        })
         .sum()
 }
 
@@ -125,13 +135,10 @@ pub fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
     const THREADS_CNT: usize = 8;
 
     let queue = Queue::<Job>::new();
-    let args: Vec<_> = args.collect();
+    queue.extend(args.map(Job::Path));
     let state = Arc::new(State {
         seen: Mutex::new(HashSet::new()),
     });
-    for path in args {
-        queue.append(Job::Path(path));
-    }
     let threads: Vec<_> = (0..THREADS_CNT).map(|_| {
         let queue = queue.clone();
         let state = state.clone();
@@ -139,6 +146,6 @@ pub fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
     }).collect();
 
     threads.into_iter()
-        .map(thread::JoinHandle::join).map(Result::unwrap)
+        .map(|t| t.join().unwrap())
         .sum()
 }
