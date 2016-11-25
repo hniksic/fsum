@@ -1,3 +1,5 @@
+extern crate rayon;
+
 use std::env;
 use std::path::PathBuf;
 
