@@ -38,14 +38,20 @@ fn dir_size(dir: &PathBuf, state: &State) -> u64 {
 
 fn path_size(path: &PathBuf, state: &State) -> u64 {
     || -> std::io::Result<u64> {
-        let meta = try!(fs::symlink_metadata(&path));
-        let size = if state.seen(&meta) {
-            0
-        } else if meta.is_dir() {
-            dir_size(&path, state)
-        } else {
-            meta.len()
-        };
+        let meta_maybe = path.metadata();
+        if path.read_link().is_ok() && meta_maybe.is_err() {
+            // completely ignore dangling symlinks (don't log error)
+            return Ok(0);
+        }
+        let meta = try!(meta_maybe);
+        let size =
+            if state.seen(&meta) {
+                0
+            } else if meta.is_dir() {
+                dir_size(&path, state)
+            } else {
+                meta.len()
+            };
         Ok(size)
     }().unwrap_or_else(|e| { log_error(&path, e); 0 })
 }
