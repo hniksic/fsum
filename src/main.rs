@@ -1,4 +1,5 @@
 extern crate rayon;
+extern crate concurrent_hashmap;
 
 use std::env;
 use std::path::PathBuf;

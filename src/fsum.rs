@@ -2,20 +2,22 @@ use std;
 use std::path::{PathBuf};
 use std::fs;
 use std::io::Write;
-use std::collections::HashSet;
-use std::sync::Mutex;
 
 use rayon::prelude::*;
+use concurrent_hashmap::ConcHashMap;
+
+// use u8 as value because ConcHashMap doesn't support zero-sized
+// value types (it panics at run-time).
+type MyMap = ConcHashMap<(u64, u64), u8>;
 
 struct State {
-    seen: Mutex<HashSet<(u64, u64)>>,
+    seen: MyMap,
 }
 
 impl State {
     pub fn seen(&self, meta: &fs::Metadata) -> bool {
         let st = meta as &std::os::unix::fs::MetadataExt;
-        let mut seen = self.seen.lock().unwrap();
-        return !seen.insert((st.dev(), st.ino()));
+        return self.seen.insert((st.dev(), st.ino()), 0).is_some();
     }
 }
 
@@ -40,7 +42,7 @@ fn path_size(path: &PathBuf, state: &State) -> u64 {
     || -> std::io::Result<u64> {
         let meta_maybe = path.metadata();
         if path.read_link().is_ok() && meta_maybe.is_err() {
-            // completely ignore dangling symlinks (don't log error)
+            // completely ignore dangling symlinks (don't even log error)
             return Ok(0);
         }
         let meta = try!(meta_maybe);
@@ -58,6 +60,6 @@ fn path_size(path: &PathBuf, state: &State) -> u64 {
 
 pub fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
 {
-    let state = State { seen: Mutex::new(HashSet::new()) };
+    let state = State { seen: MyMap::new() };
     args.map(|p| path_size(&p, &state)).sum()
 }
