@@ -16,8 +16,8 @@ struct State {
 
 impl State {
     pub fn seen(&self, meta: &fs::Metadata) -> bool {
-        let st = meta as &std::os::unix::fs::MetadataExt;
-        return self.seen.insert((st.dev(), st.ino()), 0).is_some();
+        use std::os::unix::fs::MetadataExt;
+        return self.seen.insert((meta.dev(), meta.ino()), 0).is_some();
     }
 }
 
