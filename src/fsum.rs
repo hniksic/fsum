@@ -45,7 +45,7 @@ fn path_size(path: &PathBuf, state: &State) -> u64 {
             // completely ignore dangling symlinks (don't even log error)
             return Ok(0);
         }
-        let meta = try!(meta_maybe);
+        let meta = meta_maybe?;
         let size =
             if state.seen(&meta) {
                 0
