@@ -1,14 +1,12 @@
-use std;
 use std::fs;
 use std::path::PathBuf;
 
 use chashmap::CHashMap;
 use rayon::prelude::*;
 
-type MyMap = CHashMap<(u64, u64), ()>;
-
+#[derive(Debug, Default)]
 struct State {
-    seen: MyMap,
+    seen: CHashMap<(u64, u64), ()>,
 }
 
 impl State {
@@ -39,12 +37,7 @@ fn dir_size(dir: &PathBuf, state: &State) -> u64 {
 }
 
 fn path_size(path: &PathBuf, state: &State) -> u64 {
-    let metadata_result = path.metadata();
-    if path.read_link().is_ok() && metadata_result.is_err() {
-        // completely ignore dangling symlinks (don't even log error)
-        return 0;
-    }
-    match metadata_result {
+    match path.metadata() {
         Ok(metadata) => {
             if state.seen(&metadata) {
                 0
@@ -55,13 +48,17 @@ fn path_size(path: &PathBuf, state: &State) -> u64 {
             }
         }
         Err(e) => {
-            log_error(&path, e);
+            let is_symlink = path.read_link().is_ok();
+            // don't log errors for symlinks, which are likely dangling --
+            // just ignore them completely
+            if !is_symlink {
+                log_error(&path, e);
+            }
             0
         }
     }
 }
 
-pub fn fsum(args: &mut dyn Iterator<Item = PathBuf>) -> u64 {
-    let state = State { seen: MyMap::new() };
-    args.map(|p| path_size(&p, &state)).sum()
+pub fn fsum(args: impl Iterator<Item = PathBuf>) -> u64 {
+    args.map(|p| path_size(&p, &State::default())).sum()
 }

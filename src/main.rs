@@ -5,7 +5,7 @@ mod fsum;
 use fsum::fsum;
 
 fn main() {
-    let size = fsum(&mut env::args_os().skip(1).map(PathBuf::from));
+    let size = fsum(env::args_os().skip(1).map(PathBuf::from));
     println!("{}", size);
     for &(power, digits, letter) in [
         (1 << 10, 0, "K"),
