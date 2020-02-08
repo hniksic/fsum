@@ -37,31 +37,34 @@ fn dir_size(dir: &Path, state: &State) -> u64 {
 }
 
 fn path_size(path: &Path, state: &State) -> u64 {
-    match path.metadata() {
-        Ok(metadata) => {
-            if state.seen(&metadata) {
-                0
-            } else if metadata.is_dir() {
-                dir_size(&path, state)
-            } else {
-                metadata.len()
+    || -> std::io::Result<_> {
+        let mut metadata = path.symlink_metadata()?;
+        if metadata.file_type().is_symlink() {
+            if !path.exists() {
+                // just ignore dangling symlinks
+                return Ok(0);
             }
+            metadata = path.metadata()?;
         }
-        Err(e) => {
-            let is_symlink = path.read_link().is_ok();
-            // don't log errors for symlinks, which are likely dangling --
-            // just ignore them completely
-            if !is_symlink {
-                log_error(&path, e);
-            }
+        Ok(if state.seen(&metadata) {
             0
-        }
-    }
+        } else if metadata.is_dir() {
+            dir_size(&path, state)
+        } else {
+            metadata.len()
+        })
+    }()
+    .unwrap_or_else(|e| {
+        log_error(&path, e);
+        0
+    })
 }
 
 pub fn fsum<T>(args: impl IntoIterator<Item = T>) -> u64
 where
     T: AsRef<Path>,
 {
-    args.into_iter().map(|p| path_size(p.as_ref(), &State::default())).sum()
+    args.into_iter()
+        .map(|p| path_size(p.as_ref(), &State::default()))
+        .sum()
 }
