@@ -1,10 +1,10 @@
 use std;
-use std::path::{PathBuf};
 use std::fs;
 use std::io::Write;
+use std::path::PathBuf;
 
-use rayon::prelude::*;
 use chashmap::CHashMap;
+use rayon::prelude::*;
 
 type MyMap = CHashMap<(u64, u64), ()>;
 
@@ -33,8 +33,12 @@ fn dir_size(dir: &PathBuf, state: &State) -> u64 {
             .map(|p| path_size(p, state))
             .sum();
         Ok(size)
-    }().unwrap_or_else(|e| { log_error(&dir, e); 0 })
- }
+    }()
+    .unwrap_or_else(|e| {
+        log_error(&dir, e);
+        0
+    })
+}
 
 fn path_size(path: &PathBuf, state: &State) -> u64 {
     || -> std::io::Result<u64> {
@@ -44,20 +48,22 @@ fn path_size(path: &PathBuf, state: &State) -> u64 {
             return Ok(0);
         }
         let meta = meta_maybe?;
-        let size =
-            if state.seen(&meta) {
-                0
-            } else if meta.is_dir() {
-                dir_size(&path, state)
-            } else {
-                meta.len()
-            };
+        let size = if state.seen(&meta) {
+            0
+        } else if meta.is_dir() {
+            dir_size(&path, state)
+        } else {
+            meta.len()
+        };
         Ok(size)
-    }().unwrap_or_else(|e| { log_error(&path, e); 0 })
+    }()
+    .unwrap_or_else(|e| {
+        log_error(&path, e);
+        0
+    })
 }
 
-pub fn fsum(args: &mut dyn Iterator<Item=PathBuf>) -> u64
-{
+pub fn fsum(args: &mut dyn Iterator<Item = PathBuf>) -> u64 {
     let state = State { seen: MyMap::new() };
     args.map(|p| path_size(&p, &state)).sum()
 }
