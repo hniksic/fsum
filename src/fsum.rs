@@ -1,6 +1,5 @@
 use std;
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 
 use chashmap::CHashMap;
@@ -15,12 +14,12 @@ struct State {
 impl State {
     pub fn seen(&self, meta: &fs::Metadata) -> bool {
         use std::os::unix::fs::MetadataExt;
-        return self.seen.insert((meta.dev(), meta.ino()), ()).is_some();
+        self.seen.insert((meta.dev(), meta.ino()), ()).is_some()
     }
 }
 
 fn log_error<E: std::fmt::Display>(path: &PathBuf, e: E) {
-    writeln!(std::io::stderr(), "{}: {}", path.display(), e).unwrap();
+    eprintln!("{}: {}", path.display(), e);
 }
 
 fn dir_size(dir: &PathBuf, state: &State) -> u64 {
