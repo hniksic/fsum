@@ -27,7 +27,7 @@ fn log_error<E: std::fmt::Display>(path: &PathBuf, e: E) {
 
 fn dir_size(dir: &PathBuf, state: &State) -> u64 {
     || -> std::io::Result<u64> {
-        let size = try!(fs::read_dir(&dir))
+        let size = fs::read_dir(&dir)?
             .filter_map(|res| res.map_err(|e| log_error(&dir, e)).ok())
             .map(|dirent| dirent.path())
             .collect::<Vec<_>>()
@@ -58,7 +58,7 @@ fn path_size(path: &PathBuf, state: &State) -> u64 {
     }().unwrap_or_else(|e| { log_error(&path, e); 0 })
 }
 
-pub fn fsum(args: &mut Iterator<Item=PathBuf>) -> u64
+pub fn fsum(args: &mut dyn Iterator<Item=PathBuf>) -> u64
 {
     let state = State { seen: MyMap::new() };
     args.map(|p| path_size(&p, &state)).sum()
