@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chashmap::CHashMap;
 use rayon::prelude::*;
@@ -16,11 +16,11 @@ impl State {
     }
 }
 
-fn log_error<E: std::fmt::Display>(path: &PathBuf, e: E) {
+fn log_error<E: std::fmt::Display>(path: &Path, e: E) {
     eprintln!("{}: {}", path.display(), e);
 }
 
-fn dir_size(dir: &PathBuf, state: &State) -> u64 {
+fn dir_size(dir: &Path, state: &State) -> u64 {
     match fs::read_dir(&dir) {
         Ok(rd) => rd
             .filter_map(|res| res.map_err(|e| log_error(&dir, e)).ok())
@@ -36,7 +36,7 @@ fn dir_size(dir: &PathBuf, state: &State) -> u64 {
     }
 }
 
-fn path_size(path: &PathBuf, state: &State) -> u64 {
+fn path_size(path: &Path, state: &State) -> u64 {
     match path.metadata() {
         Ok(metadata) => {
             if state.seen(&metadata) {
