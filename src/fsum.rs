@@ -23,43 +23,42 @@ fn log_error<E: std::fmt::Display>(path: &PathBuf, e: E) {
 }
 
 fn dir_size(dir: &PathBuf, state: &State) -> u64 {
-    || -> std::io::Result<u64> {
-        let size = fs::read_dir(&dir)?
+    match fs::read_dir(&dir) {
+        Ok(rd) => rd
             .filter_map(|res| res.map_err(|e| log_error(&dir, e)).ok())
             .map(|dirent| dirent.path())
             .collect::<Vec<_>>()
             .par_iter()
             .map(|p| path_size(p, state))
-            .sum();
-        Ok(size)
-    }()
-    .unwrap_or_else(|e| {
-        log_error(&dir, e);
-        0
-    })
+            .sum(),
+        Err(e) => {
+            log_error(&dir, e);
+            0
+        }
+    }
 }
 
 fn path_size(path: &PathBuf, state: &State) -> u64 {
-    || -> std::io::Result<u64> {
-        let meta_maybe = path.metadata();
-        if path.read_link().is_ok() && meta_maybe.is_err() {
-            // completely ignore dangling symlinks (don't even log error)
-            return Ok(0);
+    let metadata_result = path.metadata();
+    if path.read_link().is_ok() && metadata_result.is_err() {
+        // completely ignore dangling symlinks (don't even log error)
+        return 0;
+    }
+    match metadata_result {
+        Ok(metadata) => {
+            if state.seen(&metadata) {
+                0
+            } else if metadata.is_dir() {
+                dir_size(&path, state)
+            } else {
+                metadata.len()
+            }
         }
-        let meta = meta_maybe?;
-        let size = if state.seen(&meta) {
+        Err(e) => {
+            log_error(&path, e);
             0
-        } else if meta.is_dir() {
-            dir_size(&path, state)
-        } else {
-            meta.len()
-        };
-        Ok(size)
-    }()
-    .unwrap_or_else(|e| {
-        log_error(&path, e);
-        0
-    })
+        }
+    }
 }
 
 pub fn fsum(args: &mut dyn Iterator<Item = PathBuf>) -> u64 {
