@@ -6,7 +6,4 @@ edition = "2018"
 
 [dependencies]
 rayon = "1.3.0"
-
-[dependencies.concurrent-hashmap]
-version = "0.2.2"
-default-features = false
+chashmap = "2.2.2"

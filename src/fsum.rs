@@ -4,11 +4,9 @@ use std::fs;
 use std::io::Write;
 
 use rayon::prelude::*;
-use concurrent_hashmap::ConcHashMap;
+use chashmap::CHashMap;
 
-// use u8 as value because ConcHashMap doesn't support zero-sized
-// value types (it panics at run-time).
-type MyMap = ConcHashMap<(u64, u64), u8>;
+type MyMap = CHashMap<(u64, u64), ()>;
 
 struct State {
     seen: MyMap,
@@ -17,7 +15,7 @@ struct State {
 impl State {
     pub fn seen(&self, meta: &fs::Metadata) -> bool {
         use std::os::unix::fs::MetadataExt;
-        return self.seen.insert((meta.dev(), meta.ino()), 0).is_some();
+        return self.seen.insert((meta.dev(), meta.ino()), ()).is_some();
     }
 }
 
