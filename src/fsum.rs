@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use chashmap::CHashMap;
 use rayon::prelude::*;
@@ -59,6 +59,9 @@ fn path_size(path: &Path, state: &State) -> u64 {
     }
 }
 
-pub fn fsum(args: impl Iterator<Item = PathBuf>) -> u64 {
-    args.map(|p| path_size(&p, &State::default())).sum()
+pub fn fsum<T>(args: impl IntoIterator<Item = T>) -> u64
+where
+    T: AsRef<Path>,
+{
+    args.into_iter().map(|p| path_size(p.as_ref(), &State::default())).sum()
 }
