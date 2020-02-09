@@ -36,25 +36,26 @@ fn dir_size(dir: &Path, state: &State) -> u64 {
     }
 }
 
-fn path_size(path: &Path, state: &State) -> u64 {
-    || -> std::io::Result<_> {
-        let mut metadata = path.symlink_metadata()?;
-        if metadata.file_type().is_symlink() {
-            if !path.exists() {
-                // just ignore dangling symlinks
-                return Ok(0);
-            }
-            metadata = path.metadata()?;
+fn path_size_1(path: &Path, state: &State) -> std::io::Result<u64> {
+    let mut metadata = path.symlink_metadata()?;
+    if metadata.file_type().is_symlink() {
+        if !path.exists() {
+            // just ignore dangling symlinks
+            return Ok(0);
         }
-        Ok(if state.seen(&metadata) {
-            0
-        } else if metadata.is_dir() {
-            dir_size(&path, state)
-        } else {
-            metadata.len()
-        })
-    }()
-    .unwrap_or_else(|e| {
+        metadata = path.metadata()?;
+    }
+    Ok(if state.seen(&metadata) {
+        0
+    } else if metadata.is_dir() {
+        dir_size(&path, state)
+    } else {
+        metadata.len()
+    })
+}
+
+fn path_size(path: &Path, state: &State) -> u64 {
+    path_size_1(path, state).unwrap_or_else(|e| {
         log_error(&path, e);
         0
     })
