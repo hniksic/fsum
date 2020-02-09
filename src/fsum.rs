@@ -64,7 +64,8 @@ pub fn fsum<T>(args: impl IntoIterator<Item = T>) -> u64
 where
     T: AsRef<Path>,
 {
+    let state = State::default();
     args.into_iter()
-        .map(|p| path_size(p.as_ref(), &State::default()))
+        .map(|p| path_size(p.as_ref(), &state))
         .sum()
 }
