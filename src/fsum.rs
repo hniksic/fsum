@@ -1,12 +1,12 @@
 use std::fs;
 use std::path::Path;
 
-use chashmap::CHashMap;
+use dashmap::DashMap;
 use rayon::prelude::*;
 
 #[derive(Debug, Default)]
 struct State {
-    seen: CHashMap<(u64, u64), ()>,
+    seen: DashMap<(u64, u64), ()>,
 }
 
 impl State {
