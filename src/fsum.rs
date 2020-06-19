@@ -20,7 +20,7 @@ fn log_error<E: std::fmt::Display>(path: &Path, e: E) {
     eprintln!("{}: {}", path.display(), e);
 }
 
-fn dir_size(dir: &Path, state: &State) -> u64 {
+fn dir_size(dir: &Path, state: &State) -> u128 {
     match fs::read_dir(&dir) {
         Ok(rd) => rd
             .filter_map(|res| res.map_err(|e| log_error(&dir, e)).ok())
@@ -36,7 +36,7 @@ fn dir_size(dir: &Path, state: &State) -> u64 {
     }
 }
 
-fn path_size_1(path: &Path, state: &State) -> std::io::Result<u64> {
+fn path_size_1(path: &Path, state: &State) -> std::io::Result<u128> {
     let mut metadata = path.symlink_metadata()?;
     if metadata.file_type().is_symlink() {
         if !path.exists() {
@@ -50,18 +50,18 @@ fn path_size_1(path: &Path, state: &State) -> std::io::Result<u64> {
     } else if metadata.is_dir() {
         dir_size(&path, state)
     } else {
-        metadata.len()
+        metadata.len() as u128
     })
 }
 
-fn path_size(path: &Path, state: &State) -> u64 {
+fn path_size(path: &Path, state: &State) -> u128 {
     path_size_1(path, state).unwrap_or_else(|e| {
         log_error(&path, e);
         0
     })
 }
 
-pub fn fsum<T>(args: impl IntoIterator<Item = T>) -> u64
+pub fn fsum<T>(args: impl IntoIterator<Item = T>) -> u128
 where
     T: AsRef<Path>,
 {
